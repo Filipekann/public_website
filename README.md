@@ -1,16 +1,31 @@
-I own the filipekstrom.com domain. 
+# filipekstrom.com
 
-The goal here is to create a landing page where external users can see things that I have done but for me I am able to start and run programs that run on my own private windows PC.
+Personal playground site. Static React frontend hosted on GitHub Pages; MERN backend planned but paused for now.
 
-Everything must be in docker and docker-compose.yml
+## Structure
 
+- `frontend/` — React (Vite) app. Builds to static files, deployed to GitHub Pages.
+- `backend/` — Express + Node + MongoDB API (placeholder, paused).
+- `docker-compose.yml` — local development.
 
+## Local development
 
-Use github pages for a static page, The backend simply has to live elsewhere.
+Requires Docker and docker-compose:
 
-The 3 Steps to Make filipekstrom.com Live
-Create the Repository: Push your HTML/CSS/JS (or a built static framework like Astro or React) to a GitHub repo and enable Pages under the repository settings.  
-Add the Custom Domain: In Settings → Pages, enter filipekstrom.com into the Custom domain field. 
-Update DNS Records: At your domain registrar (e.g., Namecheap, Cloudflare, GoDaddy), create the required A records pointing to GitHub's IPs and a CNAME record for www.  
- 
-Once the DNS propagates, GitHub will automatically issue a free SSL certificate for HTTPS encryption.
+```sh
+docker compose up --build
+```
+
+The site is served at http://localhost:5173 with hot reload.
+
+## Deployment
+
+Pushing to `main` triggers the GitHub Actions workflow in `.github/workflows/deploy.yml`, which builds the frontend and deploys it to GitHub Pages.
+
+One-time setup:
+
+1. In the GitHub repo: **Settings → Pages → Build and deployment → Source: GitHub Actions**.
+2. In **Settings → Pages → Custom domain**, enter `filipekstrom.com` (the `frontend/public/CNAME` file keeps it persisted across deploys).
+3. At the domain registrar, create A records pointing `@` to GitHub's IPs and a CNAME record pointing `www` to `<username>.github.io`.
+
+GitHub will automatically issue a free SSL certificate once DNS propagates.

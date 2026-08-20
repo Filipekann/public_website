@@ -1,0 +1,31 @@
+services:
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+
+  # Backend is paused for now. Uncomment when the API is needed.
+  # backend:
+  #   build: ./backend
+  #   ports:
+  #     - "3000:3000"
+  #   volumes:
+  #     - ./backend:/app
+  #     - /app/node_modules
+  #   environment:
+  #     - MONGO_URL=mongodb://mongo:27017/filipekstrom
+  #   depends_on:
+  #     - mongo
+  #
+  # mongo:
+  #   image: mongo:8
+  #   volumes:
+  #     - mongo-data:/data/db
+  #
+  # volumes:
+  #   mongo-data:
