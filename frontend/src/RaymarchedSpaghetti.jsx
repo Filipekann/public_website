@@ -1,4 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import {
+  getCurrentUser,
+  signInWithGitHub,
+  submitScore,
+} from './supabaseClient.js'
 
 const RAMP = ' .:-=+*#%@'
 const BASE_SPIN = 0.006 // idle rotation speed, rad/frame
@@ -6,23 +11,21 @@ const BASE_SPIN = 0.006 // idle rotation speed, rad/frame
 const MAX_STEPS = 48
 const MAX_DIST = 8
 const EPS = 0.003
-const STEP_SCALE = 0.8 // safety factor: our wavy-torus SDF isn't perfectly signed
+const STEP_SCALE = 0.8
 
 // Material ids
 const BOWL = 0
 const NOODLE = 1
 const MEATBALL = 2
 
-// Noodle pile: stacked wavy tori (radius and height wobble with angle)
+// Noodle pile: stacked wavy tori
 const NOODLES = [
   { R: 0.85, y: 0.3, phase: 0.0 },
   { R: 0.7, y: 0.38, phase: 2.1 },
   { R: 0.55, y: 0.46, phase: 4.2 },
 ]
 
-// Signed distance to the whole scene. Writes [dist, material] into `res`.
 function sdScene(px, py, pz, res) {
-  // Bowl: spherical shell, top cut off by a plane
   const by = py - 0.35
   let d = Math.abs(Math.sqrt(px * px + by * by + pz * pz) - 1.15) - 0.06
   d = Math.max(d, py - 0.3)
@@ -42,7 +45,6 @@ function sdScene(px, py, pz, res) {
     }
   }
 
-  // Meatball
   const mx = px - 0.15
   const my = py - 0.42
   const mz = pz + 0.1
@@ -56,16 +58,26 @@ function sdScene(px, py, pz, res) {
   res[1] = mat
 }
 
-export default function RaymarchedSpaghetti() {
+export default function RaymarchedSpaghetti({ currentUser, onScoreSubmitted }) {
   const containerRef = useRef(null)
   const bowlRef = useRef(null)
   const noodleRef = useRef(null)
   const ballRef = useRef(null)
   const spinRef = useRef(null)
   const resRef = useRef(null)
+
   const [isFullscreen, setIsFullscreen] = useState(false)
 
-  // Dynamic grid resolution & font sizing
+  // Game / Challenge states: 'idle' | 'countdown' | 'playing' | 'finished'
+  const [gameState, setGameState] = useState('idle')
+  const [countdown, setCountdown] = useState(3)
+  const [timeLeft, setTimeLeft] = useState(10.0)
+  const [challengeSpins, setChallengeSpins] = useState(0)
+  const [personalBest, setPersonalBest] = useState(() => {
+    return Number(localStorage.getItem('spaghetti_personal_best') || 0)
+  })
+  const [submissionStatus, setSubmissionStatus] = useState(null)
+
   const dimsRef = useRef({
     W: 64,
     H: 32,
@@ -83,9 +95,10 @@ export default function RaymarchedSpaghetti() {
     dragging: false,
     lastX: 0,
     lastY: 0,
+    challengeStartRot: 0,
   })
 
-  // ResizeObserver to dynamically adjust ASCII resolution and font size based on container dimensions
+  // ResizeObserver for dynamic resolution & font size
   useEffect(() => {
     const container = containerRef.current
     if (!container) return
@@ -97,14 +110,11 @@ export default function RaymarchedSpaghetti() {
 
       if (width <= 0 || height <= 0) return
 
-      const R_char = 0.55 // JetBrains Mono character width-to-height ratio
-
-      // Well-balanced target rows (H) and columns (W) to keep height clean
+      const R_char = 0.55
       const targetH = Math.max(22, Math.min(38, Math.round(height / 18)))
       const aspect = width / height
       const targetW = Math.max(44, Math.min(96, Math.round((targetH * aspect) / R_char)))
 
-      // Exact font size so the ASCII grid neatly fills the available box
       const fontSize = Math.max(
         7,
         Math.min(26, Math.min(width / (targetW * R_char), height / targetH)),
@@ -119,9 +129,7 @@ export default function RaymarchedSpaghetti() {
     }
 
     updateDimensions()
-    const observer = new ResizeObserver(() => {
-      updateDimensions()
-    })
+    const observer = new ResizeObserver(() => updateDimensions())
     observer.observe(container)
 
     return () => observer.disconnect()
@@ -134,7 +142,6 @@ export default function RaymarchedSpaghetti() {
     let ballOut = []
     const res = new Float64Array(2)
 
-    // Light direction (normalized-ish)
     const Lx = 0.55
     const Ly = 0.75
     const Lz = -0.35
@@ -143,7 +150,7 @@ export default function RaymarchedSpaghetti() {
     const frame = () => {
       const s = state.current
       if (!s.dragging) {
-        s.velY += (BASE_SPIN - s.velY) * 0.03 // ease back to idle spin
+        s.velY += (BASE_SPIN - s.velY) * 0.03
         s.velX *= 0.96
         s.rotY += s.velY
         s.rotX += s.velX
@@ -152,14 +159,12 @@ export default function RaymarchedSpaghetti() {
 
       const { W, H, R_char } = dimsRef.current
 
-      // Reallocate buffers if grid size changed
       if (bowlOut.length !== W * H) {
         bowlOut = new Array(W * H)
         noodleOut = new Array(W * H)
         ballOut = new Array(W * H)
       }
 
-      // Orbiting camera looking at the bowl
       const cosY = Math.cos(s.rotY)
       const sinY = Math.sin(s.rotY)
       const cosX = Math.cos(s.rotX)
@@ -171,7 +176,6 @@ export default function RaymarchedSpaghetti() {
       const ty = -0.1
       const tz = 0
 
-      // Camera basis
       let fx = tx - ex
       let fy = ty - ey
       let fz = tz - ez
@@ -180,14 +184,12 @@ export default function RaymarchedSpaghetti() {
       fy /= fl
       fz /= fl
 
-      // right = normalize(cross(forward, worldUp))
       let rx = fz
       let rz = -fx
       const rl = Math.sqrt(rx * rx + rz * rz) || 1
       rx /= rl
       rz /= rl
 
-      // up = cross(right, forward)
       const ux = -rz * fy
       const uy = rz * fx - rx * fz
       const uz = rx * fy
@@ -198,11 +200,9 @@ export default function RaymarchedSpaghetti() {
 
       for (let cy = 0; cy < H; cy++) {
         for (let cx = 0; cx < W; cx++) {
-          // Screen coords scaled by character aspect ratio for square pixels
           const px = ((2 * (cx + 0.5) - W) / H) * R_char
           const py = (2 * (cy + 0.5) - H) / H
 
-          // Ray direction through this "pixel"
           let dx = px * rx + py * ux + 1.6 * fx
           let dy = py * uy + 1.6 * fy
           let dz = px * rz + py * uz + 1.6 * fz
@@ -211,7 +211,6 @@ export default function RaymarchedSpaghetti() {
           dy /= dl
           dz /= dl
 
-          // Sphere trace
           let t = 0
           let mat = -1
           for (let step = 0; step < MAX_STEPS; step++) {
@@ -228,7 +227,6 @@ export default function RaymarchedSpaghetti() {
           }
           if (mat < 0) continue
 
-          // Surface normal via central differences
           const h = 0.002
           const hx = ex + dx * t
           const hy = ey + dy * t
@@ -250,14 +248,12 @@ export default function RaymarchedSpaghetti() {
           ny /= nl
           nz /= nl
 
-          // Flip normals facing away from the camera (bowl interior)
           if (nx * dx + ny * dy + nz * dz > 0) {
             nx = -nx
             ny = -ny
             nz = -nz
           }
 
-          // Diffuse + ambient
           const diff = Math.max(0, nx * Lx + ny * Ly + nz * Lz)
           const b = Math.min(1, 0.18 + 0.82 * diff)
           const ch = RAMP[Math.floor(b * (RAMP.length - 1))]
@@ -273,7 +269,7 @@ export default function RaymarchedSpaghetti() {
       if (noodleRef.current) noodleRef.current.textContent = toText(noodleOut, W, H)
       if (ballRef.current) ballRef.current.textContent = toText(ballOut, W, H)
 
-      // Calculate spins based on rotY changes
+      // Calculate spins
       const delta = s.rotY - s.prevRotY
       s.totalRotation += Math.abs(delta)
       s.prevRotY = s.rotY
@@ -298,7 +294,99 @@ export default function RaymarchedSpaghetti() {
     return () => cancelAnimationFrame(raf)
   }, [])
 
+  // Start 10s Challenge Flow
+  const startChallenge = () => {
+    setSubmissionStatus(null)
+    setChallengeSpins(0)
+    setTimeLeft(10.0)
+    setCountdown(3)
+    setGameState('countdown')
+  }
+
+  // Countdown timer (3 -> 2 -> 1 -> GO)
+  useEffect(() => {
+    if (gameState !== 'countdown') return
+    if (countdown > 0) {
+      const timer = setTimeout(() => setCountdown(countdown - 1), 1000)
+      return () => clearTimeout(timer)
+    } else {
+      // Start 10-second sprint
+      state.current.challengeStartRot = state.current.totalRotation
+      setGameState('playing')
+    }
+  }, [gameState, countdown])
+
+  // Active 10-second game timer
+  useEffect(() => {
+    if (gameState !== 'playing') return
+
+    const startTime = Date.now()
+    const duration = 10000
+
+    const timer = setInterval(() => {
+      const elapsed = Date.now() - startTime
+      const remaining = Math.max(0, (duration - elapsed) / 1000)
+      setTimeLeft(remaining)
+
+      const rotated = state.current.totalRotation - state.current.challengeStartRot
+      const currentSpins = Math.floor(rotated / (2 * Math.PI))
+      setChallengeSpins(currentSpins)
+
+      if (remaining <= 0) {
+        clearInterval(timer)
+        finishChallenge(currentSpins)
+      }
+    }, 50)
+
+    return () => clearInterval(timer)
+  }, [gameState])
+
+  // Finish challenge & submit score
+  const finishChallenge = async (finalScore) => {
+    setGameState('finished')
+    setChallengeSpins(finalScore)
+
+    // Update personal best
+    if (finalScore > personalBest) {
+      setPersonalBest(finalScore)
+      localStorage.setItem('spaghetti_personal_best', String(finalScore))
+    }
+
+    const spinsPerSec = Number((finalScore / 10).toFixed(2))
+
+    // If user is logged in, submit to Supabase
+    const user = await getCurrentUser()
+    if (user) {
+      setSubmissionStatus('submitting')
+      const { error } = await submitScore(finalScore, spinsPerSec)
+      if (error) {
+        setSubmissionStatus('error')
+      } else {
+        setSubmissionStatus('success')
+        onScoreSubmitted?.()
+      }
+    }
+  }
+
+  const handleSignInAndSubmit = async () => {
+    await signInWithGitHub()
+    const user = await getCurrentUser()
+    if (user) {
+      setSubmissionStatus('submitting')
+      const spinsPerSec = Number((challengeSpins / 10).toFixed(2))
+      const { error } = await submitScore(challengeSpins, spinsPerSec)
+      if (!error) {
+        setSubmissionStatus('success')
+        onScoreSubmitted?.()
+      }
+    }
+  }
+
   const onPointerDown = (e) => {
+    // Only capture dragging on casual play or active sprint, not when clicking modal buttons
+    if (gameState === 'countdown' || gameState === 'finished') return
+    if (e.target.closest('button, .results-card, .game-overlay')) return
+
     e.currentTarget.setPointerCapture(e.pointerId)
     const s = state.current
     s.dragging = true
@@ -313,17 +401,20 @@ export default function RaymarchedSpaghetti() {
     const dy = e.clientY - s.lastY
     s.lastX = e.clientX
     s.lastY = e.clientY
-    s.rotY += dx * 0.01
-    s.rotX += dy * 0.01
-    s.velY = dx * 0.01 // remembered for inertia on release
-    s.velX = dy * 0.01
+    
+    // Increased velocity sensitivity in speedrun mode for satisfying spins
+    const multiplier = gameState === 'playing' ? 0.015 : 0.01
+    s.rotY += dx * multiplier
+    s.rotX += dy * multiplier
+    s.velY = dx * multiplier
+    s.velX = dy * multiplier
   }
 
   const onPointerUp = () => {
     state.current.dragging = false
   }
 
-  // Keyboard shortcut to toggle fullscreen (f or Mod+f)
+  // Keyboard shortcut (F for fullscreen)
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.key === 'f' && !e.target.matches('input, textarea')) {
@@ -339,14 +430,34 @@ export default function RaymarchedSpaghetti() {
     <div className={`spaghetti-wrapper ${isFullscreen ? 'fullscreen-mode' : ''}`}>
       <div className="spaghetti-meta">
         <div className="meta-left">
-          <p className="spin-counter">
-            Spins: <span ref={spinRef}>0</span>
-          </p>
+          {gameState === 'playing' ? (
+            <div className="challenge-live-badge">
+              <span className="live-timer">⏳ {timeLeft.toFixed(1)}s</span>
+              <span className="live-spins">⚡ {challengeSpins} spins</span>
+            </div>
+          ) : (
+            <div className="casual-stats">
+              <p className="spin-counter">
+                Casual Spins: <span ref={spinRef}>0</span>
+              </p>
+              {personalBest > 0 && (
+                <span className="pb-badge">PB: {personalBest} ⚡</span>
+              )}
+            </div>
+          )}
         </div>
+
         <div className="meta-right">
+          {gameState === 'idle' && (
+            <button className="btn btn-highlight start-challenge-btn" onClick={startChallenge}>
+              ⚡ 10s Speedrun
+            </button>
+          )}
+
           <span className="resolution-indicator" ref={resRef}>
             64×32
           </span>
+
           <button
             className="fullscreen-toggle-btn"
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -376,7 +487,7 @@ export default function RaymarchedSpaghetti() {
 
       <div
         ref={containerRef}
-        className="ascii-scene"
+        className={`ascii-scene ${gameState === 'playing' ? 'in-challenge' : ''}`}
         role="img"
         aria-label="Raymarched ASCII bowl of spaghetti with a meatball. Drag to orbit around it."
         onPointerDown={onPointerDown}
@@ -397,6 +508,85 @@ export default function RaymarchedSpaghetti() {
             aria-hidden="true"
           />
         </div>
+
+        {/* Countdown Overlay */}
+        {gameState === 'countdown' && (
+          <div
+            className="game-overlay countdown-overlay"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <div className="countdown-number">
+              {countdown > 0 ? countdown : 'SPIN! 🔥'}
+            </div>
+            <p className="countdown-hint">Get ready to drag as fast as you can!</p>
+          </div>
+        )}
+
+        {/* Results Modal */}
+        {gameState === 'finished' && (
+          <div
+            className="game-overlay results-overlay"
+            onPointerDown={(e) => e.stopPropagation()}
+            onPointerUp={(e) => e.stopPropagation()}
+          >
+            <div className="results-card" onPointerDown={(e) => e.stopPropagation()}>
+              <h3>🏁 Time's Up!</h3>
+              <div className="results-score-row">
+                <span className="results-score">{challengeSpins}</span>
+                <span className="results-unit">spins</span>
+              </div>
+              <p className="results-speed">
+                Speed: {(challengeSpins / 10).toFixed(1)} spins/sec
+                {challengeSpins >= personalBest && challengeSpins > 0 && (
+                  <span className="new-pb-tag"> 🎉 New Personal Best!</span>
+                )}
+              </p>
+
+              {currentUser ? (
+                <div className="submit-status-box">
+                  {submissionStatus === 'submitting' && (
+                    <span className="muted">Submitting to leaderboard...</span>
+                  )}
+                  {submissionStatus === 'success' && (
+                    <span className="badge badge-success">✓ Saved to Global Leaderboard!</span>
+                  )}
+                  {submissionStatus === 'error' && (
+                    <span className="badge badge-warning">Could not save score.</span>
+                  )}
+                </div>
+              ) : (
+                <div className="guest-login-prompt">
+                  <p className="muted">Sign in with GitHub to save this score to the global Hall of Fame!</p>
+                  <button
+                    type="button"
+                    className="btn btn-primary github-login-btn"
+                    onClick={handleSignInAndSubmit}
+                  >
+                    🐙 Sign in with GitHub
+                  </button>
+                </div>
+              )}
+
+              <div className="results-actions">
+                <button
+                  type="button"
+                  className="btn btn-highlight"
+                  onClick={startChallenge}
+                >
+                  ⚡ Try Again
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-outline"
+                  onClick={() => setGameState('idle')}
+                >
+                  Back to Casual
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )

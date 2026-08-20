@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react'
 import RaymarchedSpaghetti from './RaymarchedSpaghetti.jsx'
+import Leaderboard from './Leaderboard.jsx'
 import DebugPage from './DebugPage.jsx'
+import {
+  getCurrentUser,
+  isSupabaseConfigured,
+  signInWithGitHub,
+  signOut,
+  supabase,
+} from './supabaseClient.js'
 
 export default function App() {
   const [theme, setTheme] = useState(
@@ -10,11 +18,34 @@ export default function App() {
     const hash = window.location.hash.toLowerCase()
     return hash === '#debug' || hash === '#dev' ? 'debug' : 'main'
   })
+  const [currentUser, setCurrentUser] = useState(null)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  // Auth initialization and state listener
+  useEffect(() => {
+    getCurrentUser().then(setCurrentUser)
+
+    if (isSupabaseConfigured && supabase) {
+      const { data: authListener } = supabase.auth.onAuthStateChange(
+        (_event, session) => {
+          setCurrentUser(session?.user || null)
+        }
+      )
+      return () => {
+        authListener.subscription.unsubscribe()
+      }
+    }
+
+    const handleMockAuthChange = () => {
+      getCurrentUser().then(setCurrentUser)
+    }
+    window.addEventListener('mock_auth_change', handleMockAuthChange)
+    return () => window.removeEventListener('mock_auth_change', handleMockAuthChange)
+  }, [])
 
   useEffect(() => {
     const handleHashChange = () => {
@@ -35,6 +66,15 @@ export default function App() {
         history.pushState(null, '', window.location.pathname)
       }
     }
+  }
+
+  const handleSignIn = async () => {
+    await signInWithGitHub()
+  }
+
+  const handleSignOut = async () => {
+    await signOut()
+    setCurrentUser(null)
   }
 
   return (
@@ -69,6 +109,34 @@ export default function App() {
         </div>
 
         <div className="header-right">
+          {currentUser ? (
+            <div className="user-profile-pill">
+              {currentUser.user_metadata?.avatar_url && (
+                <img
+                  src={currentUser.user_metadata.avatar_url}
+                  alt={currentUser.user_metadata.user_name || 'User'}
+                  className="header-avatar"
+                />
+              )}
+              <span className="header-username">
+                @{currentUser.user_metadata?.user_name ||
+                  currentUser.user_metadata?.preferred_username ||
+                  currentUser.user_metadata?.name ||
+                  'spinner'}
+              </span>
+              <button className="logout-btn" onClick={handleSignOut} title="Sign Out">
+                Sign Out
+              </button>
+            </div>
+          ) : (
+            <button className="github-auth-btn" onClick={handleSignIn} title="Sign in with GitHub">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+              </svg>
+              <span>Sign in</span>
+            </button>
+          )}
+
           <button
             className="theme-toggle"
             onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
@@ -103,14 +171,21 @@ export default function App() {
           <section className="tile full-width spaghetti-tile">
             <div className="tile-header">
               <h2>Spaghetti</h2>
-              <span className="tile-tag">Raymarched ASCII</span>
+              <span className="tile-tag">Raymarched ASCII • 10s Challenge</span>
             </div>
             <p className="muted">
               A raymarched bowl of ASCII spaghetti, with a meatball. Drag it —
               works with mouse and touch.
             </p>
-            <RaymarchedSpaghetti />
+            <RaymarchedSpaghetti
+              currentUser={currentUser}
+              onScoreSubmitted={() => {
+                window.dispatchEvent(new Event('mock_leaderboard_change'))
+              }}
+            />
           </section>
+
+          <Leaderboard currentUser={currentUser} />
 
           <footer className="tile footer">
             <div className="footer-links">
