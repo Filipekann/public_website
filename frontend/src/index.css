@@ -106,13 +106,27 @@ a:hover {
   justify-content: space-between;
   margin: 0.75rem;
   padding: 0.75rem 1.25rem;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
   border-radius: 0.75rem;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.site-header::after {
+  content: "";
+  position: absolute;
+  left: 0.75rem;
+  right: 0.75rem;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--highlight));
 }
 
 .brand {
   font-weight: 700;
+  color: var(--accent);
 }
 
 .theme-toggle {
@@ -221,6 +235,13 @@ a:hover {
 .footer {
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.spin-counter {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin: 0 0 0.5rem 0;
 }
 
 .ascii-scene {

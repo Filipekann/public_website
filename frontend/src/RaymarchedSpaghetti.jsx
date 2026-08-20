@@ -64,9 +64,13 @@ export default function RaymarchedSpaghetti() {
   const bowlRef = useRef(null)
   const noodleRef = useRef(null)
   const ballRef = useRef(null)
+  const spinRef = useRef(null)
   const state = useRef({
     rotX: 0.55,
     rotY: 0,
+    prevRotY: 0,
+    totalRotation: 0,
+    spins: 0,
     velX: 0,
     velY: BASE_SPIN,
     dragging: false,
@@ -203,6 +207,19 @@ export default function RaymarchedSpaghetti() {
       if (bowlRef.current) bowlRef.current.textContent = toText(bowlOut)
       if (noodleRef.current) noodleRef.current.textContent = toText(noodleOut)
       if (ballRef.current) ballRef.current.textContent = toText(ballOut)
+
+      // Calculate spins based on rotY changes
+      const delta = s.rotY - s.prevRotY
+      s.totalRotation += Math.abs(delta)
+      s.prevRotY = s.rotY
+      const spins = Math.floor(s.totalRotation / (2 * Math.PI))
+      if (s.spins !== spins) {
+        s.spins = spins
+        if (spinRef.current) {
+          spinRef.current.textContent = spins
+        }
+      }
+
       raf = requestAnimationFrame(frame)
     }
 
@@ -242,26 +259,31 @@ export default function RaymarchedSpaghetti() {
   }
 
   return (
-    <div
-      className="ascii-scene"
-      role="img"
-      aria-label="Raymarched ASCII bowl of spaghetti with a meatball. Drag to orbit around it."
-      onPointerDown={onPointerDown}
-      onPointerMove={onPointerMove}
-      onPointerUp={onPointerUp}
-      onPointerCancel={onPointerUp}
-    >
-      <pre ref={bowlRef} className="ascii-layer ascii-bowl" aria-hidden="true" />
-      <pre
-        ref={noodleRef}
-        className="ascii-layer ascii-noodles"
-        aria-hidden="true"
-      />
-      <pre
-        ref={ballRef}
-        className="ascii-layer ascii-meatball"
-        aria-hidden="true"
-      />
-    </div>
+    <>
+      <p className="spin-counter">
+        Spins: <span ref={spinRef}>0</span>
+      </p>
+      <div
+        className="ascii-scene"
+        role="img"
+        aria-label="Raymarched ASCII bowl of spaghetti with a meatball. Drag to orbit around it."
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        <pre ref={bowlRef} className="ascii-layer ascii-bowl" aria-hidden="true" />
+        <pre
+          ref={noodleRef}
+          className="ascii-layer ascii-noodles"
+          aria-hidden="true"
+        />
+        <pre
+          ref={ballRef}
+          className="ascii-layer ascii-meatball"
+          aria-hidden="true"
+        />
+      </div>
+    </>
   )
 }
