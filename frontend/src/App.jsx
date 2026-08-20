@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import RaymarchedSpaghetti from './RaymarchedSpaghetti.jsx'
 import Leaderboard from './Leaderboard.jsx'
 import DebugPage from './DebugPage.jsx'
@@ -19,11 +19,28 @@ export default function App() {
     return hash === '#debug' || hash === '#dev' ? 'debug' : 'main'
   })
   const [currentUser, setCurrentUser] = useState(null)
+  const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const userMenuRef = useRef(null)
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  // Close user dropdown menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setUserMenuOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    document.addEventListener('touchstart', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+      document.removeEventListener('touchstart', handleClickOutside)
+    }
+  }, [])
 
   // Auth initialization and state listener
   useEffect(() => {
@@ -75,7 +92,14 @@ export default function App() {
   const handleSignOut = async () => {
     await signOut()
     setCurrentUser(null)
+    setUserMenuOpen(false)
   }
+
+  const username =
+    currentUser?.user_metadata?.user_name ||
+    currentUser?.user_metadata?.preferred_username ||
+    currentUser?.user_metadata?.name ||
+    'spinner'
 
   return (
     <>
@@ -110,23 +134,65 @@ export default function App() {
 
         <div className="header-right">
           {currentUser ? (
-            <div className="user-profile-pill">
-              {currentUser.user_metadata?.avatar_url && (
-                <img
-                  src={currentUser.user_metadata.avatar_url}
-                  alt={currentUser.user_metadata.user_name || 'User'}
-                  className="header-avatar"
-                />
-              )}
-              <span className="header-username">
-                @{currentUser.user_metadata?.user_name ||
-                  currentUser.user_metadata?.preferred_username ||
-                  currentUser.user_metadata?.name ||
-                  'spinner'}
-              </span>
-              <button className="logout-btn" onClick={handleSignOut} title="Sign Out">
-                Sign Out
+            <div className="user-menu-wrapper" ref={userMenuRef}>
+              <button
+                className="user-profile-btn"
+                onClick={() => setUserMenuOpen(!userMenuOpen)}
+                aria-label="User profile menu"
+                title={`Logged in as @${username}`}
+              >
+                {currentUser.user_metadata?.avatar_url ? (
+                  <img
+                    src={currentUser.user_metadata.avatar_url}
+                    alt={username}
+                    className="header-avatar"
+                  />
+                ) : (
+                  <span className="header-avatar-placeholder">🐙</span>
+                )}
+                <span className="header-username">@{username}</span>
+                <svg
+                  className={`chevron-icon ${userMenuOpen ? 'open' : ''}`}
+                  viewBox="0 0 24 24"
+                  width="12"
+                  height="12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                >
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
               </button>
+
+              {userMenuOpen && (
+                <div className="user-dropdown-menu">
+                  <div className="dropdown-user-header">
+                    <span className="dropdown-username">@{username}</span>
+                    <span className="dropdown-meta muted">Signed in with GitHub</span>
+                  </div>
+                  <div className="dropdown-divider" />
+                  <a
+                    href={`https://github.com/${username}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="dropdown-item"
+                    onClick={() => setUserMenuOpen(false)}
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+                      <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
+                    </svg>
+                    <span>View GitHub Profile</span>
+                  </a>
+                  <button className="dropdown-item dropdown-logout-btn" onClick={handleSignOut}>
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                      <polyline points="16 17 21 12 16 7" />
+                      <line x1="21" y1="12" x2="9" y2="12" />
+                    </svg>
+                    <span>Sign Out</span>
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button
@@ -176,7 +242,7 @@ export default function App() {
           <section className="tile full-width spaghetti-tile">
             <div className="tile-header">
               <h2>Spaghetti</h2>
-              <span className="tile-tag">Raymarched ASCII • 10s Challenge</span>
+              <span className="tile-tag">Raymarched ASCII</span>
             </div>
             <p className="muted">
               A raymarched bowl of ASCII spaghetti, with a meatball. Drag it —
