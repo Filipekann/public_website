@@ -1,8 +1,4 @@
-import { useEffect, useRef } from 'react'
-
-// Grid size in characters
-const W = 64
-const H = 32
+import { useEffect, useRef, useState } from 'react'
 
 const RAMP = ' .:-=+*#%@'
 const BASE_SPIN = 0.006 // idle rotation speed, rad/frame
@@ -61,10 +57,21 @@ function sdScene(px, py, pz, res) {
 }
 
 export default function RaymarchedSpaghetti() {
+  const containerRef = useRef(null)
   const bowlRef = useRef(null)
   const noodleRef = useRef(null)
   const ballRef = useRef(null)
   const spinRef = useRef(null)
+  const resRef = useRef(null)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+
+  // Dynamic grid resolution & font sizing
+  const dimsRef = useRef({
+    W: 64,
+    H: 32,
+    R_char: 0.55,
+  })
+
   const state = useRef({
     rotX: 0.55,
     rotY: 0,
@@ -78,11 +85,55 @@ export default function RaymarchedSpaghetti() {
     lastY: 0,
   })
 
+  // ResizeObserver to dynamically adjust ASCII resolution and font size based on container dimensions
   useEffect(() => {
-    const bowlOut = new Array(W * H)
-    const noodleOut = new Array(W * H)
-    const ballOut = new Array(W * H)
+    const container = containerRef.current
+    if (!container) return
+
+    const updateDimensions = () => {
+      const rect = container.getBoundingClientRect()
+      const width = rect.width
+      const height = rect.height
+
+      if (width <= 0 || height <= 0) return
+
+      const R_char = 0.55 // JetBrains Mono character width-to-height ratio
+
+      // Well-balanced target rows (H) and columns (W) to keep height clean
+      const targetH = Math.max(22, Math.min(38, Math.round(height / 18)))
+      const aspect = width / height
+      const targetW = Math.max(44, Math.min(96, Math.round((targetH * aspect) / R_char)))
+
+      // Exact font size so the ASCII grid neatly fills the available box
+      const fontSize = Math.max(
+        7,
+        Math.min(26, Math.min(width / (targetW * R_char), height / targetH)),
+      )
+
+      container.style.setProperty('--ascii-font-size', `${fontSize.toFixed(2)}px`)
+      dimsRef.current = { W: targetW, H: targetH, R_char }
+
+      if (resRef.current) {
+        resRef.current.textContent = `${targetW}×${targetH} @ ${fontSize.toFixed(1)}px`
+      }
+    }
+
+    updateDimensions()
+    const observer = new ResizeObserver(() => {
+      updateDimensions()
+    })
+    observer.observe(container)
+
+    return () => observer.disconnect()
+  }, [])
+
+  // Raymarching animation loop
+  useEffect(() => {
+    let bowlOut = []
+    let noodleOut = []
+    let ballOut = []
     const res = new Float64Array(2)
+
     // Light direction (normalized-ish)
     const Lx = 0.55
     const Ly = 0.75
@@ -99,6 +150,15 @@ export default function RaymarchedSpaghetti() {
       }
       s.rotX = Math.max(0.05, Math.min(1.35, s.rotX))
 
+      const { W, H, R_char } = dimsRef.current
+
+      // Reallocate buffers if grid size changed
+      if (bowlOut.length !== W * H) {
+        bowlOut = new Array(W * H)
+        noodleOut = new Array(W * H)
+        ballOut = new Array(W * H)
+      }
+
       // Orbiting camera looking at the bowl
       const cosY = Math.cos(s.rotY)
       const sinY = Math.sin(s.rotY)
@@ -110,6 +170,7 @@ export default function RaymarchedSpaghetti() {
       const tx = 0
       const ty = -0.1
       const tz = 0
+
       // Camera basis
       let fx = tx - ex
       let fy = ty - ey
@@ -118,12 +179,14 @@ export default function RaymarchedSpaghetti() {
       fx /= fl
       fy /= fl
       fz /= fl
+
       // right = normalize(cross(forward, worldUp))
       let rx = fz
       let rz = -fx
       const rl = Math.sqrt(rx * rx + rz * rz) || 1
       rx /= rl
       rz /= rl
+
       // up = cross(right, forward)
       const ux = -rz * fy
       const uy = rz * fx - rx * fz
@@ -135,9 +198,10 @@ export default function RaymarchedSpaghetti() {
 
       for (let cy = 0; cy < H; cy++) {
         for (let cx = 0; cx < W; cx++) {
-          // Screen coords; x is halved because characters are ~half as wide as tall
-          const px = ((2 * (cx + 0.5) - W) / H) * 0.5
+          // Screen coords scaled by character aspect ratio for square pixels
+          const px = ((2 * (cx + 0.5) - W) / H) * R_char
           const py = (2 * (cy + 0.5) - H) / H
+
           // Ray direction through this "pixel"
           let dx = px * rx + py * ux + 1.6 * fx
           let dy = py * uy + 1.6 * fy
@@ -185,6 +249,7 @@ export default function RaymarchedSpaghetti() {
           nx /= nl
           ny /= nl
           nz /= nl
+
           // Flip normals facing away from the camera (bowl interior)
           if (nx * dx + ny * dy + nz * dz > 0) {
             nx = -nx
@@ -204,9 +269,9 @@ export default function RaymarchedSpaghetti() {
         }
       }
 
-      if (bowlRef.current) bowlRef.current.textContent = toText(bowlOut)
-      if (noodleRef.current) noodleRef.current.textContent = toText(noodleOut)
-      if (ballRef.current) ballRef.current.textContent = toText(ballOut)
+      if (bowlRef.current) bowlRef.current.textContent = toText(bowlOut, W, H)
+      if (noodleRef.current) noodleRef.current.textContent = toText(noodleOut, W, H)
+      if (ballRef.current) ballRef.current.textContent = toText(ballOut, W, H)
 
       // Calculate spins based on rotY changes
       const delta = s.rotY - s.prevRotY
@@ -223,9 +288,9 @@ export default function RaymarchedSpaghetti() {
       raf = requestAnimationFrame(frame)
     }
 
-    const toText = (out) => {
+    const toText = (out, w, h) => {
       const rows = []
-      for (let r = 0; r < H; r++) rows.push(out.slice(r * W, (r + 1) * W).join(''))
+      for (let r = 0; r < h; r++) rows.push(out.slice(r * w, (r + 1) * w).join(''))
       return rows.join('\n')
     }
 
@@ -258,12 +323,59 @@ export default function RaymarchedSpaghetti() {
     state.current.dragging = false
   }
 
+  // Keyboard shortcut to toggle fullscreen (f or Mod+f)
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'f' && !e.target.matches('input, textarea')) {
+        e.preventDefault()
+        setIsFullscreen((prev) => !prev)
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [])
+
   return (
-    <>
-      <p className="spin-counter">
-        Spins: <span ref={spinRef}>0</span>
-      </p>
+    <div className={`spaghetti-wrapper ${isFullscreen ? 'fullscreen-mode' : ''}`}>
+      <div className="spaghetti-meta">
+        <div className="meta-left">
+          <p className="spin-counter">
+            Spins: <span ref={spinRef}>0</span>
+          </p>
+        </div>
+        <div className="meta-right">
+          <span className="resolution-indicator" ref={resRef}>
+            64×32
+          </span>
+          <button
+            className="fullscreen-toggle-btn"
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            title={isFullscreen ? 'Exit Fullscreen (Press F)' : 'Fullscreen (Press F)'}
+            aria-label="Toggle Fullscreen"
+          >
+            {isFullscreen ? (
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="4" y1="14" x2="10" y2="14" />
+                <line x1="10" y1="14" x2="10" y2="20" />
+                <line x1="20" y1="10" x2="14" y2="10" />
+                <line x1="14" y1="10" x2="14" y2="4" />
+                <line x1="14" y1="10" x2="21" y2="3" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            ) : (
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="15 3 21 3 21 9" />
+                <polyline points="9 21 3 21 3 15" />
+                <line x1="21" y1="3" x2="14" y2="10" />
+                <line x1="3" y1="21" x2="10" y2="14" />
+              </svg>
+            )}
+          </button>
+        </div>
+      </div>
+
       <div
+        ref={containerRef}
         className="ascii-scene"
         role="img"
         aria-label="Raymarched ASCII bowl of spaghetti with a meatball. Drag to orbit around it."
@@ -272,18 +384,20 @@ export default function RaymarchedSpaghetti() {
         onPointerUp={onPointerUp}
         onPointerCancel={onPointerUp}
       >
-        <pre ref={bowlRef} className="ascii-layer ascii-bowl" aria-hidden="true" />
-        <pre
-          ref={noodleRef}
-          className="ascii-layer ascii-noodles"
-          aria-hidden="true"
-        />
-        <pre
-          ref={ballRef}
-          className="ascii-layer ascii-meatball"
-          aria-hidden="true"
-        />
+        <div className="ascii-stage">
+          <pre ref={bowlRef} className="ascii-layer ascii-bowl" aria-hidden="true" />
+          <pre
+            ref={noodleRef}
+            className="ascii-layer ascii-noodles"
+            aria-hidden="true"
+          />
+          <pre
+            ref={ballRef}
+            className="ascii-layer ascii-meatball"
+            aria-hidden="true"
+          />
+        </div>
       </div>
-    </>
+    </div>
   )
 }

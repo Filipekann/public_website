@@ -99,16 +99,12 @@ export default function App() {
       {page === 'debug' ? (
         <DebugPage theme={theme} onNavigateHome={() => navigateTo('main')} />
       ) : (
-        <main className="container">
-          <section className="tile full-width">
+        <main className="container main-layout">
+          <section className="tile full-width spaghetti-tile">
             <div className="tile-header">
               <h2>Spaghetti</h2>
-              <span className="tile-tag">Raymarched ASCII</span>
+              <span className="tile-tag">Raymarched ASCII • Drag to rotate</span>
             </div>
-            <p className="muted">
-              A raymarched bowl of ASCII spaghetti, with a meatball. Drag it —
-              works with mouse and touch.
-            </p>
             <RaymarchedSpaghetti />
           </section>
 
