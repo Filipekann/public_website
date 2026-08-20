@@ -297,7 +297,13 @@ export default function DebugPage({ theme, onNavigateHome }) {
         <div className="footer-links">
           <button className="text-link-btn" onClick={onNavigateHome}>← Home</button>
           <span>•</span>
-          <a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
+          <a href="https://github.com/Filipekann" target="_blank" rel="noreferrer">
+            GitHub
+          </a>
+          <span>•</span>
+          <a href="https://www.linkedin.com/in/filipekstrom/" target="_blank" rel="noreferrer">
+            LinkedIn
+          </a>
         </div>
         <span className="muted">Debug View — filipekstrom.com</span>
       </footer>

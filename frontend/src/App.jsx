@@ -103,14 +103,24 @@ export default function App() {
           <section className="tile full-width spaghetti-tile">
             <div className="tile-header">
               <h2>Spaghetti</h2>
-              <span className="tile-tag">Raymarched ASCII • Drag to rotate</span>
+              <span className="tile-tag">Raymarched ASCII</span>
             </div>
+            <p className="muted">
+              A raymarched bowl of ASCII spaghetti, with a meatball. Drag it —
+              works with mouse and touch.
+            </p>
             <RaymarchedSpaghetti />
           </section>
 
           <footer className="tile footer">
             <div className="footer-links">
-              <a href="https://github.com" target="_blank" rel="noreferrer">GitHub</a>
+              <a href="https://github.com/Filipekann" target="_blank" rel="noreferrer">
+                GitHub
+              </a>
+              <span>•</span>
+              <a href="https://www.linkedin.com/in/filipekstrom/" target="_blank" rel="noreferrer">
+                LinkedIn
+              </a>
               <span>•</span>
               <button className="text-link-btn" onClick={() => navigateTo('debug')}>
                 Debug & Dev Page
